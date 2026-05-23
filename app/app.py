@@ -6,7 +6,10 @@ import plotly.graph_objects as go
 from streamlit_option_menu import option_menu
 import os, io, re, json, time, random
 from datetime import datetime
+import subprocess
+import sys
 
+subprocess.check_call([sys.executable, "-m", "pip", "install", "plotly"])
 # ─── Env Loader ─────────────────────────────────────────────────────────────────
 def load_dotenv_file():
     current_dir = os.path.dirname(__file__)
