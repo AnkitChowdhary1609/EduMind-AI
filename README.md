@@ -53,20 +53,53 @@ The platform predicts student performance, analyzes academic risks, performs clu
 # 📂 Project Structure
 
 ```bash
+
 ML/
 │
+├── .env                         # Stores secret API keys locally
+│
+├── .gitignore                   # Prevents unnecessary/private files from uploading
+│
+├── README.md                    # Main project documentation
+│
+├── Application Overview.md      # Detailed explanation of modules/features
+│
+├── requirements.txt             # Python dependencies for deployment
+│
+├── runtime.txt                  # Forces Streamlit to use Python 3.12
+│
+├── streamlit_app.py             # Main entry file for Streamlit Cloud
+│
+├── __pycache__/                 # Auto-generated Python cache (ignore/delete)
+│   └── streamlit_app.cpython-314.pyc
+│
 ├── app/
-│   ├── app.py
-│   └── requirements.txt
+│   │
+│   ├── app.py                   # Main Streamlit dashboard application
+│   │
+│   ├── requirements.txt         # Optional app-level dependencies
+│   │
+│   └── __pycache__/             # Python cache files (ignore/delete)
 │
 ├── data/
-│   ├── StudentsPerformance.csv
+│   │
+│   ├── StudentsPerformance.csv  # Academic performance dataset
+│   │
 │   └── Student Mental health.csv
+│       # Mental health and student wellness dataset
 │
 ├── notebooks/
+│   │
 │   └── AI_Student_Analytics.ipynb
+│       # Jupyter notebook for ML experimentation and analysis
 │
-└── README.md
+└── venv/                        # Local virtual environment (DO NOT upload)
+    │
+    ├── bin/
+    ├── share/
+    ├── etc/
+    └── pyvenv.cfg
+
 
 ```
 # ⚙️ Complete Setup Guide
