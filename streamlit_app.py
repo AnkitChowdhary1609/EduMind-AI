@@ -1,5 +1,0 @@
-import pathlib
-import runpy
-
-ROOT = pathlib.Path(__file__).resolve().parent
-runpy.run_path(str(ROOT / "app" / "app.py"), run_name="__main__")
