@@ -53,8 +53,6 @@ The platform predicts student performance, analyzes academic risks, performs clu
 # 📂 Project Structure
 
 ```bash
-
-```bash
 EduMind-AI/
 │
 ├── .devcontainer/               
