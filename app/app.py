@@ -29,15 +29,23 @@ def load_dotenv_file():
 
 load_dotenv_file()
 
-# First prefer env vars, then Streamlit secrets if available.
-GEMINI_MODEL = os.environ.get('GEMINI_MODEL')
-if not GEMINI_MODEL and hasattr(st, 'secrets'):
-    GEMINI_MODEL = st.secrets.get('GEMINI_MODEL')
-GEMINI_MODEL = GEMINI_MODEL or 'gemini-1.5-pro'
+# Helper to read config from env vars first, then Streamlit secrets.
+def get_config_value(name, fallback_names=None):
+    value = os.environ.get(name)
+    if not value and hasattr(st, 'secrets'):
+        value = st.secrets.get(name)
+    if not value and fallback_names:
+        for fallback_name in fallback_names:
+            value = os.environ.get(fallback_name)
+            if not value and hasattr(st, 'secrets'):
+                value = st.secrets.get(fallback_name)
+            if value:
+                break
+    return value
 
-gemini_key = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY', '')
-if not gemini_key and hasattr(st, 'secrets'):
-    gemini_key = st.secrets.get('GEMINI_API_KEY') or st.secrets.get('GOOGLE_API_KEY', '')
+GEMINI_MODEL = get_config_value('GEMINI_MODEL') or 'gemini-2.5-flash'
+
+gemini_key = get_config_value('GEMINI_API_KEY', fallback_names=['GOOGLE_API_KEY']) or ''
 if gemini_key and not os.environ.get('GEMINI_API_KEY'):
     os.environ['GEMINI_API_KEY'] = gemini_key
 
