@@ -43,11 +43,34 @@ def get_config_value(name, fallback_names=None):
                 break
     return value
 
-GEMINI_MODEL = get_config_value('GEMINI_MODEL') or 'gemini-2.5-flash'
 
-gemini_key = get_config_value('GEMINI_API_KEY', fallback_names=['GOOGLE_API_KEY']) or ''
-if gemini_key and not os.environ.get('GEMINI_API_KEY'):
-    os.environ['GEMINI_API_KEY'] = gemini_key
+def get_config_values(name, fallback_names=None):
+    raw = get_config_value(name, fallback_names=fallback_names)
+    if not raw:
+        return []
+    return [item.strip() for item in re.split(r'[,;\s]+', raw) if item.strip()]
+
+
+def get_gemini_api_keys():
+    keys = []
+    keys.extend(get_config_values('GEMINI_API_KEYS', fallback_names=['GEMINI_API_KEY']))
+    for i in range(1, 11):
+        keys.extend(get_config_values(f'GEMINI_API_KEY_{i}'))
+    if not keys:
+        keys.extend(get_config_values('GOOGLE_API_KEY'))
+    unique_keys = []
+    for key in keys:
+        if key and key not in unique_keys:
+            unique_keys.append(key)
+    return unique_keys
+
+
+GEMINI_MODEL = get_config_value('GEMINI_MODEL') or 'gemini-2.5-flash'
+GEMINI_API_KEYS = get_gemini_api_keys()
+PRIMARY_GEMINI_KEY = GEMINI_API_KEYS[0] if GEMINI_API_KEYS else ''
+
+if PRIMARY_GEMINI_KEY and not os.environ.get('GEMINI_API_KEY'):
+    os.environ['GEMINI_API_KEY'] = PRIMARY_GEMINI_KEY
 
 # ─── Gemini helpers ────────────────────────────────────────────────────────────
 def get_gemini_client(api_key: str):
@@ -56,28 +79,35 @@ def get_gemini_client(api_key: str):
     return genai
 
 
-def gemini_request_with_retry(request_fn, retries: int = 2, delay: int = 2):
+def gemini_request_with_retry(request_fn, api_keys, retries: int = 2, delay: int = 2):
+    if not api_keys:
+        raise RuntimeError(
+            "No Gemini API keys are configured. Add GEMINI_API_KEY, GOOGLE_API_KEY, or GEMINI_API_KEYS to your environment or Streamlit secrets."
+        )
+
     last_error = None
-    for attempt in range(retries + 1):
-        try:
-            return request_fn()
-        except Exception as e:
-            last_error = e
-            err_text = str(e)
-            if 'RESOURCE_EXHAUSTED' in err_text or '429' in err_text or 'quota' in err_text.lower():
-                if attempt < retries:
-                    time.sleep(delay * (attempt + 1))
-                    continue
-                message = (
-                    "Google Gemini quota is currently exhausted or rate-limited. "
-                    "Please check your Google Cloud project billing, quota, and API key. "
-                    "If you are using the free tier, confirm that your account has active Gemini quota."
-                )
-                if err_text:
-                    message += f"\n\nDetails: {err_text}"
-                raise RuntimeError(message) from e
-            raise
-    raise last_error
+    for api_key in api_keys:
+        for attempt in range(retries + 1):
+            try:
+                client = get_gemini_client(api_key)
+                return request_fn(client)
+            except Exception as e:
+                last_error = e
+                err_text = str(e)
+                if 'RESOURCE_EXHAUSTED' in err_text or '429' in err_text or 'quota' in err_text.lower():
+                    if attempt < retries:
+                        time.sleep(delay * (attempt + 1))
+                        continue
+                    break
+                raise
+
+    message = (
+        "Google Gemini quota is currently exhausted or rate-limited for all configured API keys. "
+        "Please check your API keys and quota settings."
+    )
+    if last_error:
+        message += f"\n\nLast error: {last_error}"
+    raise RuntimeError(message) from last_error
 
 # ─── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -349,8 +379,7 @@ def hero(title, subtitle, icon=""):
     </div>""", unsafe_allow_html=True)
 
 # ─── Gemini helper ────────────────────────────────────────────────────────────
-def gemini_resume_analyze(text: str, api_key: str) -> dict:
-    client = get_gemini_client(api_key)
+def gemini_resume_analyze(text: str) -> dict:
     prompt = f"""You are an expert career coach and ATS resume analyzer. Analyze the following resume text and return ONLY a valid JSON object (no markdown, no explanation).
 
 Resume:
@@ -380,10 +409,11 @@ Return this exact JSON structure:
   "keywords_missing": ["<string>"],
   "overall_feedback": "<2-3 sentence summary>"
 }}"""
-    model = client.GenerativeModel(model_name=GEMINI_MODEL)
-    response = gemini_request_with_retry(lambda: model.generate_content(
-        contents=[{"text": prompt}]
-    ))
+    def request_fn(client):
+        model = client.GenerativeModel(model_name=GEMINI_MODEL)
+        return model.generate_content(contents=[{"text": prompt}])
+
+    response = gemini_request_with_retry(request_fn, GEMINI_API_KEYS)
     raw = response.text.strip()
     raw = re.sub(r'^```json\s*', '', raw)
     raw = re.sub(r'```$', '', raw).strip()
@@ -823,8 +853,8 @@ elif selected == "Clustering":
 elif selected == "Resume AI":
     hero("Resume Intelligence", "Upload your resume for AI-powered ATS scoring & improvement roadmap", "📄")
 
-    if not gemini_key:
-        st.warning("⚠️  Please enter your **Google Gemini API key** in the sidebar to use Resume AI.")
+    if not GEMINI_API_KEYS:
+        st.warning("⚠️  Please configure at least one Gemini API key to use Resume AI.")
         st.info("Get a free key at: https://aistudio.google.com/app/apikey")
         st.stop()
 
@@ -849,7 +879,7 @@ elif selected == "Resume AI":
 
         with st.spinner("Gemini AI analyzing resume — this takes ~10 seconds..."):
             try:
-                result = gemini_resume_analyze(resume_text, gemini_key)
+                result = gemini_resume_analyze(resume_text)
             except json.JSONDecodeError:
                 st.error("Gemini returned an unexpected format. Try again.")
                 st.stop()
@@ -1063,8 +1093,8 @@ elif selected == "AI Insights":
 elif selected == "Study Coach":
     hero("AI Study Coach", "Your personal academic mentor — ask anything about study plans, exams, career goals, stress & more", "🤖")
 
-    if not gemini_key:
-        st.warning("⚠️  Please enter your **Google Gemini API key** in the sidebar to use the Study Coach.")
+    if not GEMINI_API_KEYS:
+        st.warning("⚠️  Please configure at least one Gemini API key in the sidebar to use the Study Coach.")
         st.info("Get a free key at: https://aistudio.google.com/app/apikey")
         st.stop()
 
@@ -1186,9 +1216,7 @@ elif selected == "Study Coach":
         typing_placeholder = st.empty()
 
     # ── Gemini multi-turn call ──
-    def call_gemini_chat(messages: list, profile: dict, api_key: str) -> str:
-        client = get_gemini_client(api_key)
-
+    def call_gemini_chat(messages: list, profile: dict) -> str:
         profile_ctx = ""
         if profile:
             profile_ctx = f"""
@@ -1227,10 +1255,11 @@ Guidelines:
             + conversation_history
         )
 
-        model = client.GenerativeModel(model_name=GEMINI_MODEL)
-        response = gemini_request_with_retry(lambda: model.generate_content(
-            contents=[{"text": prompt}]
-        ))
+        def request_fn(client):
+            model = client.GenerativeModel(model_name=GEMINI_MODEL)
+            return model.generate_content(contents=[{"text": prompt}])
+
+        response = gemini_request_with_retry(request_fn, GEMINI_API_KEYS)
         return response.text.strip()
 
     # ── Input area ──
@@ -1276,8 +1305,7 @@ Guidelines:
                 try:
                     reply = call_gemini_chat(
                         st.session_state.chat_messages,
-                        st.session_state.chat_profile,
-                        gemini_key
+                        st.session_state.chat_profile
                     )
                 except RuntimeError as e:
                     reply = (
